@@ -18,12 +18,12 @@ type Tweet = {
 type InfiniteTweetListProps = {
   isLoading: boolean
   isError: boolean
-  hasMore: boolean
+  hasMore: boolean | undefined
   fetchNewTweets: () => Promise<unknown>
   tweets?: Tweet[]
 }
 
-export function InfiniteTweetList({ tweets, isError, isLoading, fetchNewTweets, hasMore }: InfiniteTweetListProps) {
+export function InfiniteTweetList({ tweets, isError, isLoading, fetchNewTweets, hasMore = false }: InfiniteTweetListProps) {
   if (isLoading) return <h1>Loading...</h1>
   if (isError) return <h1>Error...</h1>
   if (tweets == null) return null
@@ -51,7 +51,39 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 function TweetCard({id, user, content, createdAt, likeCount, likedByMe}: Tweet) {
-  const toggleLike = api.tweet.toggleLike.useMutation();
+  const trpcUtils = api.useContext()
+  const toggleLike =  api.tweet.toggleLike.useMutation({
+    onSuccess: async ({ addedLike }) => {
+      const updateData: Parameters<typeof trpcUtils.tweet.infiniteFeed.setInfiniteData>[1] = (oldData) => {
+        if (oldData == null) return
+
+        const countModifier = addedLike ? 1 : -1
+
+        return {
+          ...oldData,
+          pages: oldData.pages.map(page => {
+            return {
+              ...page,
+              tweets: page.tweets.map(tweet => {
+                if (tweet.id === id) {
+                  return {
+                    ...tweet,
+                    likeCount: tweet.likeCount + countModifier,
+                    likedByMe: addedLike
+                  }
+                }
+
+                return tweet
+              })
+            }
+          })
+        }
+      }
+
+       trpcUtils.tweet.infiniteFeed.setInfiniteData({}, updateData);
+    }
+  });
+
   function handleToggleLike() {
     toggleLike.mutate({ id })
   }
